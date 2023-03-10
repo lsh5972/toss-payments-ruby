@@ -72,7 +72,7 @@ module TossPayments
     end
 
     def confirm(payload = {})
-      uri = "confirm"
+      uri = "payments/confirm"
       post(uri, payload)
     end
 

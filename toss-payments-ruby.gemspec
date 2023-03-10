@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name        = 'toss_payments'
-  s.version     = '0.2.0'
+  s.version     = '0.2.1'
   s.summary     = 'toss payments api'
   s.description = 'toss payments api'
   s.authors     = ['Soohyeon Lee']
