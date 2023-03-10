@@ -41,6 +41,16 @@ module TossPayments
     keyword_init: true,
   )
 
+  BillingResponseData = Struct.new(
+    :m_id,
+    :customer_key,
+    :authenticated_at,
+    :method,
+    :billing_key,
+    :card,
+    keyword_init: true,
+  )
+
   HOST = "https://api.tosspayments.com/v1"
 
   class Config
@@ -93,12 +103,12 @@ module TossPayments
 
     def billing_auth_card(payload = {})
       uri = "billing/authorizations/card"
-      post(uri, payload)
+      post(uri, payload, type: :billing)
     end
 
     def billing_auth_issue(payload = {})
       uri = "billing/authorizations/issue"
-      post(uri, payload)
+      post(uri, payload, type: :billing)
     end
 
     def billing(billing_key, payload = {})
@@ -112,27 +122,27 @@ module TossPayments
       { "Authorization": "Basic #{Base64.strict_encode64(config.secret_key)}:" }
     end
 
-    def get(uri, payload = {})
+    def get(uri, payload = {}, type: :payment)
       url = "#{HOST}/#{uri}"
       response = HTTParty.get(url, headers: headers, body: payload).parsed_response
       {
         code: response["code"],
         message: response["message"],
-        data: response_data_to_model(response["data"]),
+        data: type == :payment ? payment_response_data_to_model(response["data"]) : billing_response_data_to_model(response["data"]),
       }
     end
 
-    def post
+    def post(uri, payload = {}, type: :payment)
       url = "#{HOST}/#{uri}"
       response = HTTParty.post(url, headers: headers.merge("Content-Type": "application/json"), body: payload.to_json).parsed_response
       {
         code: response["code"],
         message: response["message"],
-        data: response_data_to_model(response["data"]),
+        data: type == :payment ? payment_response_data_to_model(response["data"]) : billing_response_data_to_model(response["data"]),
       }
     end
 
-    def response_data_to_model(data)
+    def payment_response_data_to_model(data)
       return nil if data.nil?
       PaymentResponseData.new(
         version: data["version"],
@@ -233,6 +243,24 @@ module TossPayments
         discount: data["discount"] ? {
           amount: data["discount"]["amount"],
         } : nil,
+      )
+    end
+
+    def billing_response_data_to_model(data)
+      return nil if data.nil?
+      BillingResponseData.new(
+        m_id: data["mId"],
+        customer_key: data["customerKey"],
+        authenticated_at: Time.parse(data["authenticatedAt"]),
+        method: data["method"],
+        billing_key: data["billingKey"],
+        card: {
+          issuer_code: data["card"]["issuerCode"],
+          acquirer_code: data["card"]["acquirerCode"],
+          number: data["card"]["number"],
+          card_type: data["card"]["cardType"],
+          owner_type: data["card"]["ownerType"],
+        },
       )
     end
   end
