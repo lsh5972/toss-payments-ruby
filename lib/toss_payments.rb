@@ -2,7 +2,16 @@ require "httparty"
 require "time"
 
 module TossPayments
-  PaymentResponseData = Struct.new(
+  ErrorResponse = Struct.new(
+    :response_type,
+    :code,
+    :message,
+    :response,
+    keyword_init: true,
+  )
+
+  PaymentResponse = Struct.new(
+    :response_type,
     :version,
     :payment_key,
     :type,
@@ -41,7 +50,8 @@ module TossPayments
     keyword_init: true,
   )
 
-  BillingResponseData = Struct.new(
+  BillingResponse = Struct.new(
+    :response_type,
     :m_id,
     :customer_key,
     :authenticated_at,
@@ -103,12 +113,12 @@ module TossPayments
 
     def billing_auth_card(payload = {})
       uri = "billing/authorizations/card"
-      post(uri, payload, type: :billing)
+      post(uri, payload, response_type: :billing)
     end
 
     def billing_auth_issue(payload = {})
       uri = "billing/authorizations/issue"
-      post(uri, payload, type: :billing)
+      post(uri, payload, response_type: :billing)
     end
 
     def billing(billing_key, payload = {})
@@ -119,53 +129,60 @@ module TossPayments
     private
 
     def headers
-      { "Authorization": "Basic #{Base64.strict_encode64(config.secret_key)}:" }
+      { "Authorization": "Basic #{Base64.strict_encode64(config.secret_key + ":")}" }
     end
 
-    def get(uri, payload = {}, type: :payment)
+    def get(uri, payload = {}, response_type: :payment)
       url = "#{HOST}/#{uri}"
       response = HTTParty.get(url, headers: headers, body: payload).parsed_response
-      {
-        code: response["code"],
-        message: response["message"],
-        data: type == :payment ? payment_response_data_to_model(response["data"]) : billing_response_data_to_model(response["data"]),
-      }
+      response_to_model(response, response_type: type)
     end
 
-    def post(uri, payload = {}, type: :payment)
+    def post(uri, payload = {}, response_type: :payment)
       url = "#{HOST}/#{uri}"
       response = HTTParty.post(url, headers: headers.merge("Content-Type": "application/json"), body: payload.to_json).parsed_response
-      {
-        code: response["code"],
-        message: response["message"],
-        data: type == :payment ? payment_response_data_to_model(response["data"]) : billing_response_data_to_model(response["data"]),
-      }
+      response_to_model(response, response_type: type)
     end
 
-    def payment_response_data_to_model(data)
-      return nil if data.nil?
-      PaymentResponseData.new(
-        version: data["version"],
-        payment_key: data["paymentKey"],
-        type: data["type"],
-        order_id: data["orderId"],
-        order_name: data["orderName"],
-        m_id: data["mId"],
-        currency: data["currency"],
-        method: data["method"],
-        total_amount: data["totalAmount"],
-        balanced_amount: data["balancedAmount"],
-        status: data["status"].downcase.to_sym,
-        requested_at: Time.parse(data["requestedAt"]),
-        approved_at: Time.parse(data["approvedAt"]),
-        use_escrow: data["useEscrow"],
-        last_transaction_key: data["lastTransactionKey"],
-        supplied_amount: data["suppliedAmount"],
-        vat: data["vat"],
-        culture_expense: data["cultureExpense"],
-        tax_free_amount: data["taxFreeAmount"],
-        tax_exemption_amount: data["taxExemptionAmount"],
-        cancels: data["canceles"]&.map do |cancel|
+    def response_to_model(response, response_type:)
+      return error_response_to_model(response) if response.keys.include?("code")
+      return payment_response_to_model(response) if response_type == :payment
+      return billing_response_to_model(response) if response_type == :billing
+    end
+
+    def error_response_to_model(response)
+      ErrorResponse.new(
+        response_type: :error,
+        code: response["code"],
+        message: response["message"],
+        data: response["data"],
+      )
+    end
+
+    def payment_response_to_model(response)
+      PaymentResponse.new(
+        response_type: :payment,
+        version: response["version"],
+        payment_key: response["paymentKey"],
+        type: response["type"],
+        order_id: response["orderId"],
+        order_name: response["orderName"],
+        m_id: response["mId"],
+        currency: response["currency"],
+        method: response["method"],
+        total_amount: response["totalAmount"],
+        balanced_amount: response["balancedAmount"],
+        status: response["status"].downcase.to_sym,
+        requested_at: Time.parse(response["requestedAt"]),
+        approved_at: Time.parse(response["approvedAt"]),
+        use_escrow: response["useEscrow"],
+        last_transaction_key: response["lastTransactionKey"],
+        supplied_amount: response["suppliedAmount"],
+        vat: response["vat"],
+        culture_expense: response["cultureExpense"],
+        tax_free_amount: response["taxFreeAmount"],
+        tax_exemption_amount: response["taxExemptionAmount"],
+        cancels: response["canceles"]&.map do |cancel|
           {
             cancel_amount: cancel["cancelAmount"],
             cancel_reason: cancel["cancelReason"],
@@ -177,89 +194,89 @@ module TossPayments
             transaction_key: cancel["transactionKey"],
           }
         end,
-        is_partial_cancelable: data["isPartialCancelable"],
-        card: data["card"] ? {
-          amount: data["card"]["amount"],
-          issuer_code: data["card"]["issuerCode"],
-          acquirer_code: data["card"]["acquirerCode"],
-          number: data["card"]["number"],
-          installment_plan_months: data["card"]["installmentPlanMonths"],
-          approve_no: data["card"]["approveNo"],
-          use_card_point: data["card"]["useCardPoint"],
-          card_type: data["card"]["cardType"],
-          owner_type: data["card"]["ownerType"],
-          acquire_status: data["card"]["acquireStatus"].downcase.to_sym,
-          is_interest_free: data["card"]["isInterestFree"],
-          interset_payer: data["card"]["intersetPayer"].downcase.to_sym,
+        is_partial_cancelable: response["isPartialCancelable"],
+        card: response["card"] ? {
+          amount: response["card"]["amount"],
+          issuer_code: response["card"]["issuerCode"],
+          acquirer_code: response["card"]["acquirerCode"],
+          number: response["card"]["number"],
+          installment_plan_months: response["card"]["installmentPlanMonths"],
+          approve_no: response["card"]["approveNo"],
+          use_card_point: response["card"]["useCardPoint"],
+          card_type: response["card"]["cardType"],
+          owner_type: response["card"]["ownerType"],
+          acquire_status: response["card"]["acquireStatus"].downcase.to_sym,
+          is_interest_free: response["card"]["isInterestFree"],
+          interset_payer: response["card"]["intersetPayer"].downcase.to_sym,
         } : nil,
-        virtual_account: data["virtualAccount"] ? {
-          account_type: data["virtualAccount"]["accountType"],
-          account_number: data["virtualAccount"]["accountNumber"],
-          bank_code: data["virtualAccount"]["bankCode"],
-          customer_name: data["virtualAccount"]["customerName"],
-          due_date: Time.parse(data["virtualAccount"]["dueDate"]),
-          refund_status: data["virtualAccount"]["refundStatus"].downcase.to_sym,
-          expired: data["virtualAccount"]["expired"],
-          settlement_status: data["virtualAccount"]["settlementStatus"],
+        virtual_account: response["virtualAccount"] ? {
+          account_type: response["virtualAccount"]["accountType"],
+          account_number: response["virtualAccount"]["accountNumber"],
+          bank_code: response["virtualAccount"]["bankCode"],
+          customer_name: response["virtualAccount"]["customerName"],
+          due_date: Time.parse(response["virtualAccount"]["dueDate"]),
+          refund_status: response["virtualAccount"]["refundStatus"].downcase.to_sym,
+          expired: response["virtualAccount"]["expired"],
+          settlement_status: response["virtualAccount"]["settlementStatus"],
         } : nil,
-        secret: data["secret"],
-        mobile_phone: data["mobilePhone"] ? {
-          customer_mobile_phone: data["mobilePhone"]["customerMobilePhone"],
-          settlement_status: data["mobilePhone"]["settlementStatus"],
-          receipt_url: data["mobilePhone"]["receiptUrl"],
+        secret: response["secret"],
+        mobile_phone: response["mobilePhone"] ? {
+          customer_mobile_phone: response["mobilePhone"]["customerMobilePhone"],
+          settlement_status: response["mobilePhone"]["settlementStatus"],
+          receipt_url: response["mobilePhone"]["receiptUrl"],
         } : nil,
-        gift_certificate: data["giftCertificate"] ? {
-          approve_no: data["giftCertificate"]["approveNo"],
-          settlement_status: data["giftCertificate"]["settlementStatus"],
+        gift_certificate: response["giftCertificate"] ? {
+          approve_no: response["giftCertificate"]["approveNo"],
+          settlement_status: response["giftCertificate"]["settlementStatus"],
         } : nil,
-        transfer: data["transfer"] ? {
-          bank_code: data["transfer"]["bankCode"],
-          settlement_status: data["transfer"]["settlementStatus"],
+        transfer: response["transfer"] ? {
+          bank_code: response["transfer"]["bankCode"],
+          settlement_status: response["transfer"]["settlementStatus"],
         } : nil,
-        receipt: data["receipt"] ? {
-          url: data["receipt"]["url"],
+        receipt: response["receipt"] ? {
+          url: response["receipt"]["url"],
         } : nil,
-        checkout: data["checkout"] ? {
-          url: data["checkout"]["url"],
+        checkout: response["checkout"] ? {
+          url: response["checkout"]["url"],
         } : nil,
-        easy_pay: data["easyPay"] ? {
-          provider: data["easyPay"]["provider"],
-          amount: data["easyPay"]["amount"],
-          discount_amount: data["easyPay"]["discountAmount"],
+        easy_pay: response["easyPay"] ? {
+          provider: response["easyPay"]["provider"],
+          amount: response["easyPay"]["amount"],
+          discount_amount: response["easyPay"]["discountAmount"],
         } : nil,
-        country: data["country"],
-        failure: data["failure"] ? {
-          code: data["failure"]["code"],
-          message: data["failure"]["message"],
+        country: response["country"],
+        failure: response["failure"] ? {
+          code: response["failure"]["code"],
+          message: response["failure"]["message"],
         } : nil,
-        cash_receipt: data["cashReceipt"] ? {
-          receipt_key: data["cashReceipt"]["receiptKey"],
-          type: data["cashReceipt"]["type"],
-          amount: data["cashReceipt"]["amount"],
-          tax_free_amount: data["cashReceipt"]["taxFreeAmount"],
-          issue_number: data["cashReceipt"]["issueNumber"],
-          receipt_url: data["cashReceipt"]["receiptUrl"],
+        cash_receipt: response["cashReceipt"] ? {
+          receipt_key: response["cashReceipt"]["receiptKey"],
+          type: response["cashReceipt"]["type"],
+          amount: response["cashReceipt"]["amount"],
+          tax_free_amount: response["cashReceipt"]["taxFreeAmount"],
+          issue_number: response["cashReceipt"]["issueNumber"],
+          receipt_url: response["cashReceipt"]["receiptUrl"],
         } : nil,
-        discount: data["discount"] ? {
-          amount: data["discount"]["amount"],
+        discount: response["discount"] ? {
+          amount: response["discount"]["amount"],
         } : nil,
       )
     end
 
-    def billing_response_data_to_model(data)
-      return nil if data.nil?
-      BillingResponseData.new(
-        m_id: data["mId"],
-        customer_key: data["customerKey"],
-        authenticated_at: Time.parse(data["authenticatedAt"]),
-        method: data["method"],
-        billing_key: data["billingKey"],
+    def billing_response_to_model(response)
+      BillingResponse.new(
+        response_type: :billing,
+        m_id: response["mId"],
+        customer_key: response["customerKey"],
+        authenticated_at: Time.parse(response["authenticatedAt"]),
+        method: response["method"],
+        billing_key: response["billingKey"],
         card: {
-          issuer_code: data["card"]["issuerCode"],
-          acquirer_code: data["card"]["acquirerCode"],
-          number: data["card"]["number"],
-          card_type: data["card"]["cardType"],
-          owner_type: data["card"]["ownerType"],
+          issuer_code: response["card"]["issuerCode"],
+          acquirer_code: response["card"]["acquirerCode"],
+          number: response["card"]["number"],
+          card_type: response["card"]["cardType"],
+          owner_type: response["card"]["ownerType"],
         },
       )
     end
