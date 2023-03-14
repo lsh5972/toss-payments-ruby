@@ -6,7 +6,7 @@ module TossPayments
     :response_type,
     :code,
     :message,
-    :response,
+    :data,
     keyword_init: true,
   )
 
@@ -135,13 +135,13 @@ module TossPayments
     def get(uri, payload = {}, response_type: :payment)
       url = "#{HOST}/#{uri}"
       response = HTTParty.get(url, headers: headers, body: payload).parsed_response
-      response_to_model(response, response_type: type)
+      response_to_model(response, response_type: response_type)
     end
 
     def post(uri, payload = {}, response_type: :payment)
       url = "#{HOST}/#{uri}"
       response = HTTParty.post(url, headers: headers.merge("Content-Type": "application/json"), body: payload.to_json).parsed_response
-      response_to_model(response, response_type: type)
+      response_to_model(response, response_type: response_type)
     end
 
     def response_to_model(response, response_type:)
@@ -172,7 +172,7 @@ module TossPayments
         method: response["method"],
         total_amount: response["totalAmount"],
         balanced_amount: response["balancedAmount"],
-        status: response["status"].downcase.to_sym,
+        status: response["status"]&.downcase&.to_sym,
         requested_at: Time.parse(response["requestedAt"]),
         approved_at: Time.parse(response["approvedAt"]),
         use_escrow: response["useEscrow"],
@@ -205,9 +205,9 @@ module TossPayments
           use_card_point: response["card"]["useCardPoint"],
           card_type: response["card"]["cardType"],
           owner_type: response["card"]["ownerType"],
-          acquire_status: response["card"]["acquireStatus"].downcase.to_sym,
+          acquire_status: response["card"]["acquireStatus"]&.downcase&.to_sym,
           is_interest_free: response["card"]["isInterestFree"],
-          interset_payer: response["card"]["intersetPayer"].downcase.to_sym,
+          interest_payer: response["card"]["interestPayer"]&.downcase&.to_sym,
         } : nil,
         virtual_account: response["virtualAccount"] ? {
           account_type: response["virtualAccount"]["accountType"],
@@ -215,7 +215,7 @@ module TossPayments
           bank_code: response["virtualAccount"]["bankCode"],
           customer_name: response["virtualAccount"]["customerName"],
           due_date: Time.parse(response["virtualAccount"]["dueDate"]),
-          refund_status: response["virtualAccount"]["refundStatus"].downcase.to_sym,
+          refund_status: response["virtualAccount"]["refundStatus"]&.downcase&.to_sym,
           expired: response["virtualAccount"]["expired"],
           settlement_status: response["virtualAccount"]["settlementStatus"],
         } : nil,
