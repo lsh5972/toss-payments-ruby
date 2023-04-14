@@ -115,10 +115,45 @@ module TossPayments
     "SD": "SK증권",
   }.as_json
 
+  CardNames = {
+    "3K": "기업비씨",
+    "46": "광주",
+    "71": "롯데",
+    "30": "산업",
+    "31": "BC",
+    "51": "삼성",
+    "38": "새마을",
+    "41": "신한",
+    "62": "신협",
+    "36": "씨티",
+    "33": "우리",
+    "W1": "우리",
+    "37": "우체국",
+    "39": "저축",
+    "35": "전북",
+    "42": "제주",
+    "15": "카카오뱅크",
+    "3A": "케이뱅크",
+    "24": "토스뱅크",
+    "21": "하나",
+    "61": "현대",
+    "11": "국민",
+    "91": "농협",
+    "34": "수협",
+    "6D": "다이너스",
+    "6I": "디스커버",
+    "4M": "마스터",
+    "3C": "유니온페이",
+    "7A": "AMEX",
+    "4J": "JCB",
+    "4V": "비자",
+  }.as_json
+
   HOST = "https://api.tosspayments.com/v1"
 
   class Config
     attr_accessor :secret_key
+    attr_accessor :billing_secret_key
   end
 
   class << self
@@ -167,34 +202,34 @@ module TossPayments
 
     def billing_auth_card(payload = {})
       uri = "billing/authorizations/card"
-      post(uri, payload, response_type: :billing)
+      post(uri, payload, response_type: :billing, secret_key_type: :billing)
     end
 
     def billing_auth_issue(payload = {})
       uri = "billing/authorizations/issue"
-      post(uri, payload, response_type: :billing)
+      post(uri, payload, response_type: :billing, secret_key_type: :billing)
     end
 
     def billing(billing_key, payload = {})
-      uri = "billing/#{billingKey}"
-      post(uri, payload)
+      uri = "billing/#{billing_key}"
+      post(uri, payload, secret_key_type: :billing)
     end
 
     private
 
-    def headers
-      { "Authorization": "Basic #{Base64.strict_encode64(config.secret_key + ":")}" }
+    def headers(secret_key_type: :normal)
+      { "Authorization": "Basic #{Base64.strict_encode64((secret_key_type === :billing ? config.billing_secret_key : config.secret_key) + ":")}" }
     end
 
-    def get(uri, payload = {}, response_type: :payment)
+    def get(uri, payload = {}, response_type: :payment, secret_key_type: :normal)
       url = "#{HOST}/#{uri}"
-      response = HTTParty.get(url, headers: headers, body: payload).parsed_response
+      response = HTTParty.get(url, headers: headers(secret_key_type: secret_key_type)).parsed_response
       response_to_model(response, response_type: response_type)
     end
 
-    def post(uri, payload = {}, response_type: :payment)
+    def post(uri, payload = {}, response_type: :payment, secret_key_type: :normal)
       url = "#{HOST}/#{uri}"
-      response = HTTParty.post(url, headers: headers.merge("Content-Type": "application/json"), body: payload.to_json).parsed_response
+      response = HTTParty.post(url, headers: headers(secret_key_type: secret_key_type).merge("Content-Type": "application/json"), body: payload.to_json).parsed_response
       response_to_model(response, response_type: response_type)
     end
 
@@ -250,6 +285,7 @@ module TossPayments
         end,
         is_partial_cancelable: response["isPartialCancelable"],
         card: response["card"] ? {
+          card_name: CardNames[response["card"]["issuerCode"]],
           amount: response["card"]["amount"],
           issuer_code: response["card"]["issuerCode"],
           acquirer_code: response["card"]["acquirerCode"],
@@ -333,6 +369,7 @@ module TossPayments
         method: response["method"],
         billing_key: response["billingKey"],
         card: {
+          card_name: CardNames[response["card"]["issuerCode"]],
           issuer_code: response["card"]["issuerCode"],
           acquirer_code: response["card"]["acquirerCode"],
           number: response["card"]["number"],
